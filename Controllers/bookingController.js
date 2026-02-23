@@ -1,0 +1,337 @@
+import Booking from '../Models/Booking.js';
+import User from '../Models/User.js';
+
+// ─────────────────────────────────────────────────────────
+// Helper: Calculate a basic fare estimate
+// Formula: base + (distanceKm * perKmRate) + (durationMins * perMinRate)
+// ─────────────────────────────────────────────────────────
+const estimateFare = (distanceKm, durationMins, vehicleType = 'CAR') => {
+    const rates = {
+        CAR:  { base: 50, perKm: 12, perMin: 1.5 },
+        AUTO: { base: 30, perKm: 9,  perMin: 1.0 },
+        BIKE: { base: 20, perKm: 6,  perMin: 0.8 },
+    };
+    const r = rates[vehicleType] || rates.CAR;
+    return Math.round(r.base + distanceKm * r.perKm + durationMins * r.perMin);
+};
+
+// ─── 1. POST /api/bookings/request ─────────────────────────
+// Passenger requests a ride
+// @access Private (Passenger)
+export const requestRide = async (req, res) => {
+    try {
+        const {
+            pickupAddress, pickupCoords,
+            dropoffAddress, dropoffCoords,
+            rideType, vehicleType, seats,
+            distanceKm, durationMins,
+            offeredFare, paymentMethod
+        } = req.body || {};
+
+        if (!pickupAddress || !pickupCoords || !dropoffAddress || !dropoffCoords) {
+            return res.status(400).json({ success: false, message: 'Pickup and dropoff details are required' });
+        }
+
+        // Block if passenger already has an active ride
+        const existingActive = await Booking.findOne({
+            passenger: req.user._id,
+            status: { $in: ['pending', 'accepted', 'arrived', 'ongoing'] }
+        });
+        if (existingActive) {
+            return res.status(409).json({ success: false, message: 'You already have an active ride', data: { bookingId: existingActive._id } });
+        }
+
+        const estFare = estimateFare(distanceKm || 5, durationMins || 15, vehicleType);
+
+        const booking = await Booking.create({
+            passenger:     req.user._id,
+            pickup:        { address: pickupAddress,  coordinates: pickupCoords  },
+            dropoff:       { address: dropoffAddress, coordinates: dropoffCoords },
+            rideType:      rideType     || 'city',
+            vehicleType:   vehicleType  || 'CAR',
+            seats:         seats        || 1,
+            distanceKm:    distanceKm   || 0,
+            durationMins:  durationMins || 0,
+            estimatedFare: estFare,
+            offeredFare:   offeredFare  || estFare,
+            finalFare:     offeredFare  || estFare,
+            paymentMethod: paymentMethod || 'cash',
+        });
+
+        return res.status(201).json({ success: true, message: 'Ride requested successfully', data: booking });
+
+    } catch (error) {
+        console.error('requestRide error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to request ride' });
+    }
+};
+
+// ─── 2. GET /api/bookings/nearby ───────────────────────────
+// Driver sees all pending ride requests (no geo-filter for now, simple approach)
+// @access Private (Driver)
+export const getNearbyRides = async (req, res) => {
+    try {
+        const { vehicleType } = req.query;
+
+        const query = { status: 'pending', driver: null };
+        if (vehicleType) query.vehicleType = vehicleType;
+
+        const rides = await Booking
+            .find(query)
+            .populate('passenger', 'name phone profileImage ridePersonality')
+            .sort({ createdAt: -1 })
+            .limit(20);
+
+        return res.json({ success: true, data: rides });
+    } catch (error) {
+        console.error('getNearbyRides error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to fetch rides' });
+    }
+};
+
+// ─── 3. POST /api/bookings/:id/accept ──────────────────────
+// Driver accepts a ride request
+// @access Private (Driver)
+export const acceptRide = async (req, res) => {
+    try {
+        const booking = await Booking.findById(req.params.id);
+
+        if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+        if (booking.status !== 'pending') {
+            return res.status(409).json({ success: false, message: `Cannot accept. Ride is already ${booking.status}` });
+        }
+
+        // Make sure driver doesn't have another active ride
+        const driverBusy = await Booking.findOne({
+            driver: req.user._id,
+            status: { $in: ['accepted', 'arrived', 'ongoing'] }
+        });
+        if (driverBusy) {
+            return res.status(409).json({ success: false, message: 'You already have an active ride' });
+        }
+
+        booking.driver     = req.user._id;
+        booking.status     = 'accepted';
+        booking.acceptedAt = new Date();
+        await booking.save();
+
+        const populated = await booking.populate([
+            { path: 'passenger', select: 'name phone profileImage' },
+            { path: 'driver',    select: 'name phone profileImage driverDetails' },
+        ]);
+
+        return res.json({ success: true, message: 'Ride accepted', data: populated });
+    } catch (error) {
+        console.error('acceptRide error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to accept ride' });
+    }
+};
+
+// ─── 4. PUT /api/bookings/:id/status ───────────────────────
+// Update ride status: arrived → ongoing → completed or cancelled
+// @access Private (Driver or Passenger)
+export const updateRideStatus = async (req, res) => {
+    try {
+        const { status, cancellationReason } = req.body || {};
+
+        const VALID_TRANSITIONS = {
+            driver: {
+                pending: ['cancelled'],
+                accepted: ['arrived', 'cancelled'],
+                arrived: ['ongoing', 'cancelled'],
+                ongoing: ['completed']
+            },
+            passenger: { pending: ['cancelled'] },
+        };
+
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+        // Determine caller role
+        const isDriver    = booking.driver    && booking.driver.toString()    === req.user._id.toString();
+        const isPassenger = booking.passenger && booking.passenger.toString() === req.user._id.toString();
+
+        if (!isDriver && !isPassenger) {
+            return res.status(403).json({ success: false, message: 'Not authorized to update this ride' });
+        }
+
+        const role = isDriver ? 'driver' : 'passenger';
+        const allowed = VALID_TRANSITIONS[role][booking.status] || [];
+        if (!allowed.includes(status)) {
+            return res.status(400).json({ success: false, message: `Cannot move from '${booking.status}' to '${status}' as ${role}` });
+        }
+
+        // Apply status and relevant timestamp
+        booking.status = status;
+        const now = new Date();
+        if (status === 'arrived')    booking.arrivedAt   = now;
+        if (status === 'ongoing')    booking.startedAt   = now;
+        if (status === 'completed') {
+            booking.completedAt    = now;
+            booking.paymentStatus  = 'completed';
+
+            // Add earning to driver's wallet
+            if (booking.driver) {
+                await User.findByIdAndUpdate(booking.driver, {
+                    $inc: { 'driverDetails.earnings': booking.finalFare }
+                });
+            }
+            // Deduct from passenger wallet if wallet payment
+            if (booking.paymentMethod === 'wallet') {
+                await User.findByIdAndUpdate(booking.passenger, {
+                    $inc: { walletBalance: -booking.finalFare }
+                });
+            }
+        }
+        if (status === 'cancelled') {
+            booking.cancelledAt        = now;
+            booking.cancelledBy        = role;
+            booking.cancellationReason = cancellationReason || '';
+        }
+
+        await booking.save();
+
+        return res.json({ success: true, message: `Ride status updated to '${status}'`, data: booking });
+    } catch (error) {
+        console.error('updateRideStatus error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to update status' });
+    }
+};
+
+// ─── 5. GET /api/bookings/active ───────────────────────────
+// Get current active ride for the logged-in user (passenger or driver)
+// @access Private
+export const getActiveRide = async (req, res) => {
+    try {
+        const ACTIVE = ['pending', 'accepted', 'arrived', 'ongoing'];
+        const query = req.user.role === 'driver'
+            ? { driver: req.user._id, status: { $in: ACTIVE } }
+            : { passenger: req.user._id, status: { $in: ACTIVE } };
+
+        const booking = await Booking.findOne(query)
+            .populate('passenger', 'name phone profileImage ridePersonality')
+            .populate('driver', 'name phone profileImage driverDetails');
+
+        if (!booking) return res.json({ success: true, data: null, message: 'No active ride' });
+
+        return res.json({ success: true, data: booking });
+    } catch (error) {
+        console.error('getActiveRide error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to fetch active ride' });
+    }
+};
+
+// ─── 6. GET /api/bookings/history ──────────────────────────
+// Get ride history for the logged-in user
+// @access Private
+export const getRideHistory = async (req, res) => {
+    try {
+        const { page = 1, limit = 10 } = req.query;
+        const skip = (Number(page) - 1) * Number(limit);
+
+        const query = req.user.role === 'driver'
+            ? { driver: req.user._id, status: { $in: ['completed', 'cancelled'] } }
+            : { passenger: req.user._id, status: { $in: ['completed', 'cancelled'] } };
+
+        const [rides, total] = await Promise.all([
+            Booking.find(query)
+                .populate('passenger', 'name phone profileImage')
+                .populate('driver', 'name phone profileImage driverDetails')
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(Number(limit)),
+            Booking.countDocuments(query)
+        ]);
+
+        return res.json({
+            success: true,
+            data: rides,
+            pagination: { total, page: Number(page), pages: Math.ceil(total / Number(limit)) }
+        });
+    } catch (error) {
+        console.error('getRideHistory error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to fetch ride history' });
+    }
+};
+
+// ─── 7. POST /api/bookings/:id/rate ────────────────────────
+// Rate the ride after it's completed
+// @access Private
+export const rateRide = async (req, res) => {
+    try {
+        const { rating, comment } = req.body;
+
+        if (!rating || rating < 1 || rating > 5) {
+            return res.status(400).json({ success: false, message: 'Rating must be between 1 and 5' });
+        }
+
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+        if (booking.status !== 'completed') {
+            return res.status(400).json({ success: false, message: 'Can only rate completed rides' });
+        }
+
+        const isPassenger = booking.passenger.toString() === req.user._id.toString();
+        const isDriver    = booking.driver && booking.driver.toString() === req.user._id.toString();
+
+        if (!isPassenger && !isDriver) {
+            return res.status(403).json({ success: false, message: 'Not authorized to rate this ride' });
+        }
+
+        const now = new Date();
+        if (isPassenger) {
+            if (booking.ratingByPassenger?.rating) {
+                return res.status(409).json({ success: false, message: 'You have already rated this ride' });
+            }
+            booking.ratingByPassenger = { rating, comment, givenAt: now };
+
+            // Update driver's average rating
+            if (booking.driver) {
+                const driver = await User.findById(booking.driver);
+                if (driver) {
+                    const prev  = driver.driverDetails.ratings;
+                    const count = prev.count + 1;
+                    const avg   = ((prev.average * prev.count) + rating) / count;
+                    driver.driverDetails.ratings = { average: Math.round(avg * 10) / 10, count };
+                    await driver.save();
+                }
+            }
+        } else {
+            if (booking.ratingByDriver?.rating) {
+                return res.status(409).json({ success: false, message: 'You have already rated this ride' });
+            }
+            booking.ratingByDriver = { rating, comment, givenAt: now };
+        }
+
+        await booking.save();
+        return res.json({ success: true, message: 'Rating submitted', data: booking });
+    } catch (error) {
+        console.error('rateRide error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to submit rating' });
+    }
+};
+
+// ─── 8. GET /api/bookings/:id ──────────────────────────────
+// Get a single booking by ID
+// @access Private
+export const getBookingById = async (req, res) => {
+    try {
+        const booking = await Booking.findById(req.params.id)
+            .populate('passenger', 'name phone profileImage ridePersonality')
+            .populate('driver', 'name phone profileImage driverDetails');
+
+        if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+        const isPassenger = booking.passenger._id.toString() === req.user._id.toString();
+        const isDriver    = booking.driver && booking.driver._id.toString() === req.user._id.toString();
+
+        if (!isPassenger && !isDriver) {
+            return res.status(403).json({ success: false, message: 'Not authorized' });
+        }
+
+        return res.json({ success: true, data: booking });
+    } catch (error) {
+        console.error('getBookingById error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to fetch booking' });
+    }
+};
