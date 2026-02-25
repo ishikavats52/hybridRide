@@ -1,5 +1,6 @@
 import Booking from '../Models/Booking.js';
 import User from '../Models/User.js';
+import Message from '../Models/Message.js';
 
 // ─────────────────────────────────────────────────────────
 // Helper: Calculate a basic fare estimate
@@ -41,7 +42,16 @@ export const requestRide = async (req, res) => {
             return res.status(409).json({ success: false, message: 'You already have an active ride', data: { bookingId: existingActive._id } });
         }
 
-        const estFare = estimateFare(distanceKm || 5, durationMins || 15, vehicleType);
+        // For city rides, use the base calculation.
+        // For outstation/rental, trust the offeredFare from the frontend (which is based on driver's per/km rate)
+        let estFare;
+        if (rideType === 'city') {
+            estFare = estimateFare(distanceKm || 5, durationMins || 15, vehicleType);
+        } else {
+            estFare = offeredFare || estimateFare(distanceKm || 5, durationMins || 15, vehicleType);
+        }
+
+        const finalCalculatedFare = offeredFare || estFare;
 
         const booking = await Booking.create({
             passenger:     req.user._id,
@@ -54,7 +64,7 @@ export const requestRide = async (req, res) => {
             durationMins:  durationMins || 0,
             estimatedFare: estFare,
             offeredFare:   offeredFare  || estFare,
-            finalFare:     offeredFare  || estFare,
+            finalFare:     finalCalculatedFare,
             paymentMethod: paymentMethod || 'cash',
         });
 
@@ -82,7 +92,19 @@ export const getNearbyRides = async (req, res) => {
             .sort({ createdAt: -1 })
             .limit(20);
 
-        return res.json({ success: true, data: rides });
+        // Obfuscate dropoffs for pending rides
+        const obfuscatedRides = rides.map(b => {
+            const obj = b.toObject();
+            if (!['ongoing', 'completed'].includes(obj.status)) {
+                obj.dropoff = {
+                    address: "Hidden until OTP",
+                    coordinates: [0, 0]
+                };
+            }
+            return obj;
+        });
+
+        return res.json({ success: true, data: obfuscatedRides });
     } catch (error) {
         console.error('getNearbyRides error:', error);
         return res.status(500).json({ success: false, message: 'Failed to fetch rides' });
@@ -214,6 +236,16 @@ export const getActiveRide = async (req, res) => {
 
         if (!booking) return res.json({ success: true, data: null, message: 'No active ride' });
 
+        // Obfuscate dropoff for driver if ride hasn't started
+        if (req.user.role === 'driver' && !['ongoing', 'completed'].includes(booking.status)) {
+            const obfuscated = booking.toObject();
+            obfuscated.dropoff = {
+                address: "Hidden until OTP",
+                coordinates: [0, 0]
+            };
+            return res.json({ success: true, data: obfuscated });
+        }
+
         return res.json({ success: true, data: booking });
     } catch (error) {
         console.error('getActiveRide error:', error);
@@ -329,9 +361,75 @@ export const getBookingById = async (req, res) => {
             return res.status(403).json({ success: false, message: 'Not authorized' });
         }
 
+        // Obfuscate dropoff for driver if ride hasn't started
+        if (isDriver && !['ongoing', 'completed'].includes(booking.status)) {
+            const obfuscated = booking.toObject();
+            obfuscated.dropoff = {
+                address: "Hidden until OTP",
+                coordinates: [0, 0]
+            };
+            return res.json({ success: true, data: obfuscated });
+        }
+
         return res.json({ success: true, data: booking });
     } catch (error) {
         console.error('getBookingById error:', error);
         return res.status(500).json({ success: false, message: 'Failed to fetch booking' });
+    }
+};
+
+// ─── 9. GET /api/bookings/:id/messages ─────────────────────
+// Get chat messages for a specific booking
+// @access Private
+export const getMessages = async (req, res) => {
+    try {
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+        const isPassenger = booking.passenger.toString() === req.user._id.toString();
+        const isDriver    = booking.driver && booking.driver.toString() === req.user._id.toString();
+
+        if (!isPassenger && !isDriver) {
+            return res.status(403).json({ success: false, message: 'Not authorized' });
+        }
+
+        const messages = await Message.find({ booking: req.params.id }).sort({ createdAt: 1 });
+        return res.json({ success: true, data: messages });
+    } catch (error) {
+        console.error('getMessages error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to fetch messages' });
+    }
+};
+
+// ─── 10. POST /api/bookings/:id/messages ────────────────────
+// Send a chat message for a specific booking
+// @access Private
+export const sendMessage = async (req, res) => {
+    try {
+        const { text } = req.body;
+        if (!text || !text.trim()) {
+            return res.status(400).json({ success: false, message: 'Message text is required' });
+        }
+
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
+
+        const isPassenger = booking.passenger.toString() === req.user._id.toString();
+        const isDriver    = booking.driver && booking.driver.toString() === req.user._id.toString();
+
+        if (!isPassenger && !isDriver) {
+            return res.status(403).json({ success: false, message: 'Not authorized to send messages' });
+        }
+
+        const message = await Message.create({
+            booking: req.params.id,
+            sender: req.user._id,
+            text: text.trim(),
+        });
+
+        return res.status(201).json({ success: true, data: message });
+    } catch (error) {
+        console.error('sendMessage error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to send message' });
     }
 };

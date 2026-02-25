@@ -162,3 +162,50 @@ export const getOnlineDrivers = async (req, res) => {
         res.status(500).json({ success: false, message: 'Server Error' });
     }
 };
+
+// @desc    Get dynamic earnings for the driver
+// @route   GET /api/driver/earnings
+// @access  Private (Driver)
+import Booking from '../Models/Booking.js';
+
+export const getEarnings = async (req, res) => {
+    try {
+        const driverId = req.user._id;
+
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        const startOfWeek = new Date(startOfToday); // Assuming Sunday is start
+        startOfWeek.setDate(startOfToday.getDate() - startOfToday.getDay());
+        
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        const bookings = await Booking.find({
+            driver: driverId,
+            status: 'completed'
+        });
+
+        let today = 0;
+        let week = 0;
+        let month = 0;
+        let total = 0;
+
+        bookings.forEach(b => {
+            const date = new Date(b.completedAt || b.createdAt);
+            const amount = b.finalFare || 0;
+            total += amount;
+
+            if (date >= startOfToday) today += amount;
+            if (date >= startOfWeek) week += amount;
+            if (date >= startOfMonth) month += amount;
+        });
+
+        res.json({
+            success: true,
+            data: { today, week, month, total, currentBalance: total } // Keeping naming compatible with frontend wallet if needed
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error fetching earnings' });
+    }
+};

@@ -10,7 +10,7 @@ const rideSchema = new mongoose.Schema(
 
     type: {
       type: String,
-      enum: ["local", "outstation", "intercity"],
+      enum: ["local", "outstation", "intercity", "rental"],
       required: true,
     },
 

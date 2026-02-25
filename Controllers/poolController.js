@@ -66,8 +66,9 @@ export const searchRides = async (req, res) => {
         };
 
         if (date) {
-            // Passenger explicitly requested a ride on or after this date string
-            query.scheduledTime = { $gte: new Date(date) };
+            // Temporarily ignore the strict date parsing for Outstation testing 
+            // query.scheduledTime = { $gte: new Date(date) };
+            query.scheduledTime = { $gte: new Date(Date.now() - 12 * 60 * 60 * 1000) };
         } else {
             // Shift baseline search tolerance 12 hours negative so freshly published rides don't instantly disappear in testing
             query.scheduledTime = { $gte: new Date(Date.now() - 12 * 60 * 60 * 1000) };
@@ -92,12 +93,7 @@ export const searchRides = async (req, res) => {
         }
 
         if (type) {
-            if (type.toUpperCase() === 'RENTAL') {
-                query.type = 'outstation';
-                // For rentals, we often look for rides where availableSeats matches totalSeats 
-            } else {
-                query.type = type.toLowerCase();
-            }
+            query.type = type.toLowerCase();
         }
 
         const rides = await Ride.find(query)

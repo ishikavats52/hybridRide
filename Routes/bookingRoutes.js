@@ -9,6 +9,8 @@ import {
     getRideHistory,
     rateRide,
     getBookingById,
+    getMessages,
+    sendMessage,
 } from '../Controllers/bookingController.js';
 
 const router = express.Router();
@@ -37,5 +39,7 @@ router.get('/:id',              getBookingById);
 router.post('/:id/accept',      acceptRide);
 router.put('/:id/status',       updateRideStatus);
 router.post('/:id/rate',        rateRide);
+router.get('/:id/messages',     getMessages);
+router.post('/:id/messages',    sendMessage);
 
 export default router;

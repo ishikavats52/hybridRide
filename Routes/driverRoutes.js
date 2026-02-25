@@ -8,7 +8,8 @@ import {
     updateDriverProfile, 
     toggleOnline,
     uploadDocument,
-    getOnlineDrivers
+    getOnlineDrivers,
+    getEarnings
 } from '../Controllers/driverController.js';
 
 const router = express.Router();
@@ -46,6 +47,7 @@ router.get('/profile', protect, driverOnly, getDriverProfile);
 router.put('/profile', protect, driverOnly, updateDriverProfile);
 router.post('/status', protect, driverOnly, toggleOnline);
 router.get('/online', protect, getOnlineDrivers);
+router.get('/earnings', protect, driverOnly, getEarnings);
 
 // Upload Route with Error Handling - Accessible by all roles for profile images
 router.post('/upload', protect, (req, res, next) => {

@@ -87,6 +87,12 @@ const userSchema = new mongoose.Schema(
       },
 
       earnings: { type: Number, default: 0 },
+
+      preferences: {
+        outstationRatePerKm: { type: Number, default: 15 },
+        nightCharge: { type: Number, default: 250 },
+        allowNightStay: { type: Boolean, default: false }
+      }
     },
 
     verificationStatus: {
