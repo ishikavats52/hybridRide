@@ -110,28 +110,32 @@ export const uploadDocument = async (req, res) => {
         }
 
         const { docType } = req.body;
-        const validDocTypes = ['licenseFront', 'licenseBack', 'registration', 'insurance', 'aadharFront', 'aadharBack', 'panCard', 'permit', 'fitness', 'rc'];
+        const isDriver = req.user.role === 'driver';
+        const validDocTypes = ['licenseFront', 'licenseBack', 'registration', 'insurance', 'aadharFront', 'aadharBack', 'panCard', 'permit', 'fitness', 'rc', 'profileImage'];
 
         if (!docType || !validDocTypes.includes(docType)) {
-             // If no docType provided, we just return the path (legacy behavior or for avatar?)
-             // But for verification we need it saved. 
-             // Let's enforce docType for now or default to something if needed.
-             // For now, return error if strict, or just logic:
-             if (!docType) {
-                 return res.status(400).json({ success: false, message: 'docType is required (licenseFront, licenseBack, registration, insurance)' });
-             }
+             return res.status(400).json({ success: false, message: 'Invalid or missing docType' });
+        }
+
+        // Security: Non-drivers can ONLY upload profileImage
+        if (!isDriver && docType !== 'profileImage') {
+            return res.status(403).json({ success: false, message: 'Passengers can only upload profile images' });
         }
         
-        // Return the path (or full URL)
+        // Return the path
         const filePath = `/uploads/${req.file.filename}`;
         
-        // Save to DB using atomic update to prevent race conditions with parallel uploads
-
-        const updateField = `driverDetails.documents.${docType}`;
+        let updateQuery = {};
+        if (docType === 'profileImage') {
+            updateQuery = { $set: { profileImage: filePath } };
+        } else {
+            const updateField = `driverDetails.documents.${docType}`;
+            updateQuery = { $set: { [updateField]: filePath } };
+        }
         
         const user = await User.findByIdAndUpdate(
             req.user._id,
-            { $set: { [updateField]: filePath } },
+            updateQuery,
             { new: true, runValidators: true }
         );
 

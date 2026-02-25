@@ -115,4 +115,8 @@ const rideSchema = new mongoose.Schema(
 
 const Ride = mongoose.model("Ride", rideSchema);
 
+// Add geo-spatial indexes for origin and destination
+rideSchema.index({ "origin.location": "2dsphere" });
+rideSchema.index({ "destination.location": "2dsphere" });
+
 export default Ride;

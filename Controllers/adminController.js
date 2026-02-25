@@ -1,5 +1,6 @@
 import User from '../Models/User.js';
 import Booking from '../Models/Booking.js';
+import Ride from '../Models/Ride.js';
 
 // Get list of drivers (with filter for pending/verified)
 export const getDrivers = async (req, res) => {
@@ -168,13 +169,34 @@ export const getDashboardStats = async (req, res) => {
             }}
         ]);
 
+        // Pooling stats
+        const totalPools = await Ride.countDocuments();
+        const activePools = await Ride.countDocuments({ status: { $in: ['scheduled', 'ongoing'] } });
+
+        // Aggregate pooling revenue (sum of all confirmed/completed passenger bookings)
+        const poolRevenueStats = await Ride.aggregate([
+            { $unwind: '$passengers' },
+            { $match: { 'passengers.bookingStatus': { $in: ['confirmed', 'completed'] } } },
+            { $group: {
+                _id: null,
+                totalRevenue: { $sum: { $multiply: ['$passengers.seatsBooked', '$pricePerSeat'] } },
+                todayRevenue: {
+                    $sum: {
+                        $cond: [{ $gte: ['$createdAt', today] }, { $multiply: ['$passengers.seatsBooked', '$pricePerSeat'] }, 0]
+                    }
+                }
+            }}
+        ]);
+
         const stats = {
             totalPassengers,
             totalDrivers,
             activeDrivers,
             newRegistrationsToday,
-            dailyRevenue: revenueStats[0]?.todayRevenue || 0,
-            totalRevenue: revenueStats[0]?.totalRevenue || 0
+            totalPools,
+            activePools,
+            dailyRevenue: (revenueStats[0]?.todayRevenue || 0) + (poolRevenueStats[0]?.todayRevenue || 0),
+            totalRevenue: (revenueStats[0]?.totalRevenue || 0) + (poolRevenueStats[0]?.totalRevenue || 0)
         };
 
         res.json({ success: true, data: stats });
@@ -197,14 +219,93 @@ export const getFinancialOverview = async (req, res) => {
             }}
         ]);
 
-        const data = stats[0] || { totalCollection: 0, totalCommission: 0, totalPayouts: 0 };
+        // Aggregate pooling revenue similarly for financial overview
+        const poolStats = await Ride.aggregate([
+            { $unwind: '$passengers' },
+            { $match: { 'passengers.bookingStatus': { $in: ['confirmed', 'completed'] } } },
+            { $group: {
+                _id: null,
+                totalCollection: { $sum: { $multiply: ['$passengers.seatsBooked', '$pricePerSeat'] } }
+            }}
+        ]);
+
+        const rideData = stats[0] || { totalCollection: 0, totalCommission: 0, totalPayouts: 0 };
+        const poolData = poolStats[0] || { totalCollection: 0 };
+
+        const totalCollection = rideData.totalCollection + poolData.totalCollection;
+        const totalCommission = (rideData.totalCollection * 0.15) + (poolData.totalCollection * 0.10); // Assuming 10% for pools
+        const totalPayouts = totalCollection - totalCommission;
         
         res.json({ success: true, data: {
-            ...data,
-            netProfit: data.totalCommission // Simple representation: commission is platform profit
+            totalCollection,
+            totalCommission,
+            totalPayouts,
+            netProfit: totalCommission
         }});
     } catch (error) {
         console.error(error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// Get all pooling rides
+export const getAllPools = async (req, res) => {
+    try {
+        const { type, status } = req.query;
+        let query = {};
+
+        if (type) query.type = type;
+        if (status) query.status = status;
+
+        const pools = await Ride.find(query)
+            .populate('host', 'name email phone profileImage driverDetails')
+            .populate('passengers.user', 'name email phone')
+            .sort({ scheduledTime: -1 });
+
+        res.json({ success: true, count: pools.length, data: pools });
+    } catch (error) {
+        console.error('getAllPools error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+// Get all ride bookings (on-demand)
+export const getAllRides = async (req, res) => {
+    try {
+        const { status } = req.query;
+        let query = {};
+
+        if (status && status !== 'all') {
+            query.status = status;
+        }
+
+        const rides = await Booking.find(query)
+            .populate('passenger', 'name email phone profileImage')
+            .populate('driver', 'name email phone profileImage driverDetails')
+            .sort({ createdAt: -1 });
+
+        res.json({ success: true, count: rides.length, data: rides });
+    } catch (error) {
+        console.error('getAllRides error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// Get single ride details
+export const getRideById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const ride = await Booking.findById(id)
+            .populate('passenger', 'name email phone profileImage verificationStatus')
+            .populate('driver', 'name email phone profileImage driverDetails verificationStatus')
+            .lean();
+
+        if (!ride) {
+            return res.status(404).json({ success: false, message: 'Ride not found' });
+        }
+
+        res.json({ success: true, data: ride });
+    } catch (error) {
+        console.error('getRideById error:', error);
         res.status(500).json({ success: false, message: 'Server Error' });
     }
 };

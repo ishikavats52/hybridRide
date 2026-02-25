@@ -47,17 +47,14 @@ router.put('/profile', protect, driverOnly, updateDriverProfile);
 router.post('/status', protect, driverOnly, toggleOnline);
 router.get('/online', protect, getOnlineDrivers);
 
-// Upload Route with Error Handling
-router.post('/upload', protect, driverOnly, (req, res, next) => {
+// Upload Route with Error Handling - Accessible by all roles for profile images
+router.post('/upload', protect, (req, res, next) => {
     upload.single('document')(req, res, (err) => {
         if (err instanceof multer.MulterError) {
-            // A Multer error occurred when uploading.
             return res.status(400).json({ success: false, message: `Multer Error: ${err.message}` });
         } else if (err) {
-            // An unknown error occurred when uploading.
             return res.status(400).json({ success: false, message: err });
         }
-        // Everything went fine.
         next();
     });
 }, uploadDocument);

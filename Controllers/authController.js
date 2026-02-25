@@ -82,14 +82,13 @@ export const register = async (req, res) => {
 
         const savedUser = await user.save();
 
+        const token = generateToken(savedUser._id);
+        const userData = savedUser.toObject();
+        delete userData.password;
+
         return sendSuccess(res, 201, 'Registration successful', {
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            phone: user.phone,
-            role: user.role,
-            driverApprovalStatus: user.driverApprovalStatus,
-            token: generateToken(user._id),
+            ...userData,
+            token,
         });
     } catch (error) {
         console.error('Register error:', error);
@@ -126,15 +125,13 @@ export const login = async (req, res) => {
             return sendError(res, 401, 'Invalid credentials');
         }
 
+        const token = generateToken(user._id);
+        const userData = user.toObject();
+        delete userData.password;
+
         return sendSuccess(res, 200, 'Login successful', {
-            _id: user._id,
-            name: user.name,
-            email: user.email,
-            phone: user.phone,
-            role: user.role,
-            walletBalance: user.walletBalance,
-            driverApprovalStatus: user.driverApprovalStatus,
-            token: generateToken(user._id),
+            ...userData,
+            token,
         });
     } catch (error) {
         console.error('Login error:', error);
