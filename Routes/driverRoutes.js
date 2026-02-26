@@ -2,6 +2,7 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
 import { protect, driverOnly } from '../Middleware/authMiddleware.js'; // Assuming auth middleware exists
 import { 
     getDriverProfile, 
@@ -14,10 +15,16 @@ import {
 
 const router = express.Router();
 
+// Ensure uploads directory exists to prevent Render crashes
+const uploadDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 // --- MultConfig ---
 const storage = multer.diskStorage({
     destination(req, file, cb) {
-        cb(null, 'uploads/');
+        cb(null, uploadDir);
     },
     filename(req, file, cb) {
         // e.g. driver-ID-timestamp.ext
