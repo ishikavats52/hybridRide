@@ -1,6 +1,6 @@
 import express from 'express';
 import { protect, adminOnly } from '../Middleware/authMiddleware.js';
-import { getDrivers, verifyDriver, getPassengers, toggleBlockStatus, getPassengerRides, getPassengerTransactions, getDashboardStats, getFinancialOverview, getAllPools, getAllRides, getRideById } from '../Controllers/adminController.js';
+import { getDrivers, verifyDriver, getPassengers, toggleBlockStatus, getPassengerRides, getPassengerTransactions, getDashboardStats, getFinancialOverview, getAllPools, getAllRides, getRideById, getDriverWallets } from '../Controllers/adminController.js';
 
 const router = express.Router();
 
@@ -15,6 +15,7 @@ router.get('/passengers/:id/transactions', getPassengerTransactions);
 router.put('/drivers/:id/verify', verifyDriver);
 router.get('/dashboard-stats', getDashboardStats);
 router.get('/financial-overview', getFinancialOverview);
+router.get('/driver-wallets', getDriverWallets);
 router.get('/pools', getAllPools);
 router.get('/rides', getAllRides);
 router.get('/rides/:id', getRideById);

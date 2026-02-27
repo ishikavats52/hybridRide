@@ -248,6 +248,26 @@ export const getFinancialOverview = async (req, res) => {
     }
 };
 
+// Get driver wallets for admin payouts page
+export const getDriverWallets = async (req, res) => {
+    try {
+        const drivers = await User.find({ role: 'driver' }).select('name _id walletBalance driverDetails.earnings');
+        
+        const wallets = drivers.map(d => ({
+            driverId: d._id,
+            driverName: d.name,
+            balance: d.walletBalance || 0,
+            totalEarned: d.driverDetails?.earnings || 0,
+            commissionDue: 0 // Mock for now, could be calculated based on bookings
+        }));
+        
+        res.json({ success: true, count: wallets.length, data: wallets });
+    } catch (error) {
+        console.error('getDriverWallets error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
 // Get all pooling rides
 export const getAllPools = async (req, res) => {
     try {
