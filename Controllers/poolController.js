@@ -14,6 +14,7 @@ export const publishRide = async (req, res) => {
             vehicle,
             totalSeats,
             pricePerSeat,
+            seatPricing,
             preferences
         } = req.body;
 
@@ -39,6 +40,7 @@ export const publishRide = async (req, res) => {
             totalSeats: Number(totalSeats),
             availableSeats: Number(totalSeats),
             pricePerSeat: Number(pricePerSeat),
+            seatPricing: seatPricing || {},
             preferences: preferences || {}
         });
 

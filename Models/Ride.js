@@ -81,6 +81,12 @@ const rideSchema = new mongoose.Schema(
       min: 0,
     },
     
+    seatPricing: {
+      front: { type: Number },
+      middle: { type: Number },
+      back: { type: Number },
+    },
+    
     passengers: [
       {
         user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
