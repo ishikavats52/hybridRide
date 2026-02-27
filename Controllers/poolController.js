@@ -193,3 +193,36 @@ export const getPassengerPools = async (req, res) => {
         return res.status(500).json({ success: false, message: 'Failed to fetch passenger history' });
     }
 };
+
+// ─── 6. PUT /api/pools/:id/status ──────────────────────────
+// Driver updates the status of their pool (e.g. 'ongoing', 'cancelled')
+// @access Private (Driver)
+export const updatePoolStatus = async (req, res) => {
+    try {
+        const { status } = req.body;
+        const validStatuses = ['scheduled', 'ongoing', 'completed', 'cancelled'];
+        
+        if (!validStatuses.includes(status)) {
+             return res.status(400).json({ success: false, message: 'Invalid status' });
+        }
+
+        const ride = await Ride.findById(req.params.id);
+
+        if (!ride) {
+            return res.status(404).json({ success: false, message: 'Ride not found' });
+        }
+
+        // Ensure only the host can update the status
+        if (ride.host.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ success: false, message: 'Not authorized to update this ride' });
+        }
+
+        ride.status = status;
+        await ride.save();
+
+        return res.status(200).json({ success: true, message: `Ride status updated to ${status}`, data: ride });
+    } catch (error) {
+        console.error('updatePoolStatus error:', error);
+        return res.status(500).json({ success: false, message: 'Failed to update ride status' });
+    }
+};
