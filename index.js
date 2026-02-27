@@ -9,6 +9,7 @@ import driverRoutes from './Routes/driverRoutes.js';
 import adminRoutes from './Routes/adminRoutes.js';
 import bookingRoutes from './Routes/bookingRoutes.js';
 import poolRoutes from './Routes/poolRoutes.js';
+import paymentRoutes from './Routes/paymentRoutes.js';
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ app.use('/api/driver',   driverRoutes);
 app.use('/api/admin',    adminRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/pools',    poolRoutes);
+app.use('/api/payments', paymentRoutes);
 app.use('/uploads', express.static('uploads'));
 
 // ─── 404 handler ──────────────────────────────────────────────
