@@ -161,9 +161,14 @@ export const updateRideStatus = async (req, res) => {
                 pending: ['cancelled'],
                 accepted: ['arrived', 'cancelled'],
                 arrived: ['ongoing', 'cancelled'],
-                ongoing: ['completed']
+                ongoing: ['completed', 'cancelled']
             },
-            passenger: { pending: ['cancelled'] },
+            passenger: { 
+                pending: ['cancelled'],
+                accepted: ['cancelled'],
+                arrived: ['cancelled'],
+                ongoing: ['cancelled']
+            },
         };
 
         const booking = await Booking.findById(req.params.id);
