@@ -167,7 +167,8 @@ export const updateRideStatus = async (req, res) => {
                 pending: ['cancelled'],
                 accepted: ['cancelled'],
                 arrived: ['cancelled'],
-                ongoing: ['cancelled']
+                ongoing: ['cancelled'],
+                completed: ['completed']
             },
         };
 
@@ -194,15 +195,20 @@ export const updateRideStatus = async (req, res) => {
         if (status === 'arrived')    booking.arrivedAt   = now;
         if (status === 'ongoing')    booking.startedAt   = now;
         if (status === 'completed') {
-            booking.completedAt    = now;
-            booking.paymentStatus  = 'completed';
+            if (booking.status !== 'completed') {
+                booking.completedAt = now;
+            }
+            booking.paymentStatus = 'completed';
 
-            // Add earning to driver's wallet
-            if (booking.driver) {
+            // Add earning to driver's wallet (if not already added)
+            // To prevent double counting if we called this twice
+            if (booking.driver && !booking.earningsProcessed) {
                 await User.findByIdAndUpdate(booking.driver, {
                     $inc: { 'driverDetails.earnings': booking.finalFare }
                 });
+                booking.earningsProcessed = true; 
             }
+            // ...
             // Deduct from passenger wallet if wallet payment
             if (booking.paymentMethod === 'wallet') {
                 await User.findByIdAndUpdate(booking.passenger, {
@@ -230,10 +236,10 @@ export const updateRideStatus = async (req, res) => {
 // @access Private
 export const getActiveRide = async (req, res) => {
     try {
-        const ACTIVE = ['pending', 'accepted', 'arrived', 'ongoing'];
+        const ACTIVE = ['pending', 'accepted', 'arrived', 'ongoing', 'completed'];
         const query = req.user.role === 'driver'
-            ? { driver: req.user._id, status: { $in: ACTIVE } }
-            : { passenger: req.user._id, status: { $in: ACTIVE } };
+            ? { driver: req.user._id, status: { $in: ACTIVE }, paymentStatus: 'pending' }
+            : { passenger: req.user._id, status: { $in: ACTIVE }, paymentStatus: 'pending' };
 
         const booking = await Booking.findOne(query)
             .populate('passenger', 'name phone profileImage ridePersonality')
