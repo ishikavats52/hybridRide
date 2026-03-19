@@ -124,6 +124,9 @@ const userSchema = new mongoose.Schema(
     isBlocked: { type: Boolean, default: false },
 
     walletBalance: { type: Number, default: 0 },
+
+    otp: { type: String, default: null },
+    otpExpires: { type: Date, default: null },
   },
   { timestamps: true }
 );
