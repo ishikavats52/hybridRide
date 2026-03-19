@@ -7,7 +7,7 @@ const googleClient = new OAuth2Client('110831328035-bqft18nqtfk06o3qrc78d414s731
 
 // ─── Helper ────────────────────────────────────────────────────
 const generateToken = (id) =>
-    jwt.sign({ id }, process.env.JWT_SECRET || 'secret123', { expiresIn: '30d' });
+    jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
 
 const sendSuccess = (res, statusCode, message, data = {}) =>
     res.status(statusCode).json({ success: true, message, data });

@@ -2,9 +2,12 @@ import Booking from './Models/Booking.js';
 import User from './Models/User.js';
 import mongoose from 'mongoose';
 
+import dotenv from 'dotenv';
+dotenv.config();
+
 const resetActiveRides = async () => {
     try {
-        await mongoose.connect('mongodb+srv://sishika077_db_user:uzZCLOy8bAsiWUai@cluster0.1fkvpy3.mongodb.net/?appName=Cluster0');
+        await mongoose.connect(process.env.MONGO_URI);
         console.log('Connected to DB');
 
         const activeRides = await Booking.find({
