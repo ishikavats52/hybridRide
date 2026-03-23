@@ -34,6 +34,5 @@ router.get('/driver-wallets', getDriverWallets);
 router.get('/pools', getAllPools);
 router.get('/rides', getAllRides);
 router.get('/rides/:id', getRideById);
-router.post('/drivers/:id/upload', upload.single('document'), uploadDriverDocument);
 
 export default router;
