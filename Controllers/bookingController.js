@@ -21,13 +21,23 @@ const estimateFare = (distanceKm, durationMins, vehicleType = 'CAR') => {
 // @access Private (Passenger)
 export const requestRide = async (req, res) => {
     try {
-        const {
+        let {
             pickupAddress, pickupCoords,
             dropoffAddress, dropoffCoords,
             rideType, vehicleType, seats,
             distanceKm, durationMins,
             offeredFare, paymentMethod
         } = req.body || {};
+
+        // Robust Mapping: Convert frontend types to backend enums
+        if (rideType === 'INSTANT') rideType = 'city';
+        if (rideType === 'POOLING') rideType = 'pool';
+        
+        const v = String(vehicleType || '').toUpperCase();
+        if (v.includes('CAR')) vehicleType = 'CAR';
+        else if (v.includes('AUTO')) vehicleType = 'AUTO';
+        else if (v.includes('BIKE')) vehicleType = 'BIKE';
+        else if (vehicleType) vehicleType = 'CAR'; // Case-insensitive CAR fallback
 
         if (!pickupAddress || !pickupCoords || !dropoffAddress || !dropoffCoords) {
             return res.status(400).json({ success: false, message: 'Pickup and dropoff details are required' });
