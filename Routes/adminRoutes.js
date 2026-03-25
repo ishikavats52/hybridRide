@@ -12,6 +12,9 @@ import {
     getAllPools, 
     getAllRides, 
     getRideById, 
+    getAllRides, 
+    getRideById, 
+    getPoolById,
     getDriverWallets
 } from '../Controllers/adminController.js';
 
@@ -30,6 +33,7 @@ router.get('/dashboard-stats', getDashboardStats);
 router.get('/financial-overview', getFinancialOverview);
 router.get('/driver-wallets', getDriverWallets);
 router.get('/pools', getAllPools);
+router.get('/pools/:id', getPoolById);
 router.get('/rides', getAllRides);
 router.get('/rides/:id', getRideById);
 

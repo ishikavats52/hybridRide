@@ -339,3 +339,22 @@ export const getRideById = async (req, res) => {
     }
 };
 
+// Get single pool details
+export const getPoolById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const pool = await Ride.findById(id)
+            .populate('host', 'name email phone profileImage driverDetails verificationStatus')
+            .populate('passengers.user', 'name email phone profileImage verificationStatus')
+            .lean();
+
+        if (!pool) {
+            return res.status(404).json({ success: false, message: 'Pool not found' });
+        }
+
+        res.json({ success: true, data: pool });
+    } catch (error) {
+        console.error('getPoolById error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};

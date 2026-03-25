@@ -223,7 +223,12 @@ export const updateRideStatus = async (req, res) => {
             if (booking.status !== 'completed') {
                 booking.completedAt = now;
             }
-            booking.paymentStatus = 'completed';
+            
+            // CRITICAL FIX: Only set paymentStatus to completed if the PASSENGER is the one updating
+            // This ensures the ride remains "active" for the passenger until they finish the payment screen.
+            if (isPassenger) {
+                booking.paymentStatus = 'completed';
+            }
 
             // Add earning to driver's wallet (if not already added)
             // To prevent double counting if we called this twice
@@ -235,7 +240,7 @@ export const updateRideStatus = async (req, res) => {
             }
             // ...
             // Deduct from passenger wallet if wallet payment
-            if (booking.paymentMethod === 'wallet') {
+            if (booking.paymentMethod === 'wallet' && isPassenger) {
                 await User.findByIdAndUpdate(booking.passenger, {
                     $inc: { walletBalance: -booking.finalFare }
                 });
@@ -261,10 +266,16 @@ export const updateRideStatus = async (req, res) => {
 // @access Private
 export const getActiveRide = async (req, res) => {
     try {
-        const ACTIVE = ['pending', 'accepted', 'arrived', 'ongoing', 'completed'];
-        const query = req.user.role === 'driver'
-            ? { driver: req.user._id, status: { $in: ACTIVE }, paymentStatus: 'pending' }
-            : { passenger: req.user._id, status: { $in: ACTIVE }, paymentStatus: 'pending' };
+        const isDriver = req.user.role === 'driver';
+        
+        // Drivers: Finished with ride as soon as status is 'completed'
+        // Passengers: Ride stays active until paymentStatus is 'completed'
+        const DRIVER_ACTIVE_STATUS = ['pending', 'accepted', 'arrived', 'ongoing'];
+        const PASSENGER_ACTIVE_STATUS = ['pending', 'accepted', 'arrived', 'ongoing', 'completed'];
+
+        const query = isDriver
+            ? { driver: req.user._id, status: { $in: DRIVER_ACTIVE_STATUS } }
+            : { passenger: req.user._id, status: { $in: PASSENGER_ACTIVE_STATUS }, paymentStatus: 'pending' };
 
         const booking = await Booking.findOne(query)
             .populate('passenger', 'name phone profileImage ridePersonality')
@@ -273,7 +284,7 @@ export const getActiveRide = async (req, res) => {
         if (!booking) return res.json({ success: true, data: null, message: 'No active ride' });
 
         // Obfuscate dropoff for driver if ride hasn't started
-        if (req.user.role === 'driver' && !['ongoing', 'completed'].includes(booking.status)) {
+        if (isDriver && !['ongoing', 'completed'].includes(booking.status)) {
             const obfuscated = booking.toObject();
             obfuscated.dropoff = {
                 address: "Hidden until OTP",
