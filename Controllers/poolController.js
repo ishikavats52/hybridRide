@@ -227,6 +227,13 @@ export const updatePoolStatus = async (req, res) => {
             return res.status(403).json({ success: false, message: 'Not authorized to update this ride' });
         }
 
+        if (status === 'completed') {
+            const now = new Date();
+            if (new Date(ride.scheduledTime) > now) {
+                return res.status(400).json({ success: false, message: 'Cannot complete a trip before its scheduled time' });
+            }
+        }
+
         ride.status = status;
         if (req.body.cancellationReason) {
             ride.cancellationReason = req.body.cancellationReason;

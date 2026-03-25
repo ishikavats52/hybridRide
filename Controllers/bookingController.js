@@ -206,6 +206,12 @@ export const updateRideStatus = async (req, res) => {
             return res.status(400).json({ success: false, message: `Cannot move from '${booking.status}' to '${status}' as ${role}` });
         }
 
+        if (status === 'completed' && isDriver) {
+            if (booking.status !== 'ongoing') {
+                return res.status(400).json({ success: false, message: 'Trip must be ongoing before it can be completed' });
+            }
+        }
+        
         // Apply status and relevant timestamp
         booking.status = status;
         const now = new Date();
