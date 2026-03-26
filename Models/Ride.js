@@ -63,6 +63,11 @@ const rideSchema = new mongoose.Schema(
     },
 
     vehicle: { type: String },
+    vehicleType: {
+      type: String,
+      enum: ["CAR", "BIKE", "TRAVELER"],
+      default: "CAR",
+    },
 
     totalSeats: {
       type: Number,

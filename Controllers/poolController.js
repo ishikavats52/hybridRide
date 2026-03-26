@@ -12,6 +12,7 @@ export const publishRide = async (req, res) => {
             destinationName, destinationCoords,
             scheduledTime,
             vehicle,
+            vehicleType, // "CAR" | "BIKE" | "TRAVELER"
             totalSeats,
             pricePerSeat,
             seatPricing,
@@ -37,6 +38,7 @@ export const publishRide = async (req, res) => {
             },
             scheduledTime: new Date(scheduledTime),
             vehicle: vehicle || 'Sedan',
+            vehicleType: vehicleType || 'CAR',
             totalSeats: Number(totalSeats),
             availableSeats: Number(totalSeats),
             pricePerSeat: Number(pricePerSeat),
