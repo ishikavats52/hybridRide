@@ -1,6 +1,8 @@
 import User from '../Models/User.js';
 import Booking from '../Models/Booking.js';
 import Ride from '../Models/Ride.js';
+import Wallet from '../Models/Wallet.js';
+import Withdrawal from '../Models/Withdrawal.js';
 
 // Get list of drivers (with filter for pending/verified)
 export const getDrivers = async (req, res) => {
@@ -261,6 +263,7 @@ export const getFinancialOverview = async (req, res) => {
 export const getDriverWallets = async (req, res) => {
     try {
         const drivers = await User.find({ role: { $regex: /^driver$/i } }).select('name _id walletBalance driverDetails.earnings');
+        console.log(`Admin fetching driver wallets, found: ${drivers.length}`);
         
         const wallets = drivers.map(d => ({
             driverId: d._id,
@@ -281,6 +284,7 @@ export const getDriverWallets = async (req, res) => {
 export const getPassengerWallets = async (req, res) => {
     try {
         const passengers = await User.find({ role: { $regex: /^passenger$/i } }).select('name _id walletBalance phone');
+        console.log(`Admin fetching passenger wallets, found: ${passengers.length}`);
         
         const wallets = passengers.map(p => ({
             passengerId: p._id,
@@ -374,6 +378,50 @@ export const getPoolById = async (req, res) => {
         res.json({ success: true, data: pool });
     } catch (error) {
         console.error('getPoolById error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+// Get all wallet transactions for the admin feed
+export const getAllTransactions = async (req, res) => {
+    try {
+        // Fetch all wallets and their transactions
+        const wallets = await Wallet.find().populate('user', 'name phone role');
+        
+        let allTransactions = [];
+        
+        wallets.forEach(wallet => {
+            if (wallet.user) {
+                const userTransactions = wallet.transactions.map(tx => ({
+                    ...tx.toObject(),
+                    userName: wallet.user.name,
+                    userRole: wallet.user.role,
+                    userId: wallet.user._id,
+                    walletId: wallet._id
+                }));
+                allTransactions = [...allTransactions, ...userTransactions];
+            }
+        });
+        
+        // Sort by timestamp descending
+        allTransactions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        
+        // Return latest 100 for now
+        res.json({ success: true, count: allTransactions.length, data: allTransactions.slice(0, 100) });
+    } catch (error) {
+        console.error('getAllTransactions error:', error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// Placeholder for refund actions (to be implemented with specific refund logic)
+export const handleRefundAction = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { action } = req.body;
+        
+        res.json({ success: true, message: `Refund ${id} ${action}ed (Mocked)` });
+    } catch (error) {
+        console.error(error);
         res.status(500).json({ success: false, message: 'Server Error' });
     }
 };

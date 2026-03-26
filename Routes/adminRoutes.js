@@ -14,7 +14,8 @@ import {
     getRideById, 
     getPoolById,
     getDriverWallets,
-    getPassengerWallets
+    getPassengerWallets,
+    getAllTransactions
 } from '../Controllers/adminController.js';
 
 const router = express.Router();
@@ -32,6 +33,7 @@ router.get('/dashboard-stats', getDashboardStats);
 router.get('/financial-overview', getFinancialOverview);
 router.get('/driver-wallets', getDriverWallets);
 router.get('/passenger-wallets', getPassengerWallets);
+router.get('/transactions', getAllTransactions);
 router.get('/pools', getAllPools);
 router.get('/pools/:id', getPoolById);
 router.get('/rides', getAllRides);
