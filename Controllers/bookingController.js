@@ -1,6 +1,7 @@
 import Booking from '../Models/Booking.js';
 import User from '../Models/User.js';
 import Message from '../Models/Message.js';
+import Wallet from '../Models/Wallet.js';
 
 // ─────────────────────────────────────────────────────────
 // Helper: Calculate a basic fare estimate
@@ -184,7 +185,7 @@ export const updateRideStatus = async (req, res) => {
                 pending: ['cancelled'],
                 accepted: ['cancelled'],
                 arrived: ['cancelled'],
-                ongoing: ['cancelled'],
+                ongoing: [], // Cannot cancel once started (OTP entered)
                 completed: ['completed']
             },
         };
@@ -236,14 +237,36 @@ export const updateRideStatus = async (req, res) => {
                 booking.paymentStatus = 'completed';
             }
 
+            // Deduct from passenger wallet (mandatory for all rides now)
+            const passenger = await User.findById(booking.passenger);
+            if (passenger) {
+                const totalAmount = booking.finalFare || booking.offeredFare || 0;
+                passenger.walletBalance -= totalAmount;
+                await passenger.save();
+
+                let passengerWallet = await Wallet.findOne({ user: booking.passenger });
+                if (!passengerWallet) {
+                    passengerWallet = await Wallet.create({ user: booking.passenger, balance: passenger.walletBalance });
+                }
+                passengerWallet.balance = passenger.walletBalance;
+                passengerWallet.transactions.push({
+                    type: 'debit',
+                    amount: totalAmount,
+                    description: `Ride Payment (ID: ${booking._id.toString().slice(-6).toUpperCase()})`,
+                    referenceId: booking._id
+                });
+                await passengerWallet.save();
+            }
+
             // Add earning to driver's wallet (if not already added)
             if (booking.driver && !booking.earningsProcessed) {
-                const commission = booking.finalFare * 0.02;
-                const driverNetEarning = booking.finalFare - commission;
+                const totalFare = booking.finalFare || booking.offeredFare || 0;
+                const commission = totalFare * 0.02;
+                const driverNetEarning = totalFare - commission;
 
                 // Update Total Earnings (Aggregate)
                 await User.findByIdAndUpdate(booking.driver, {
-                    $inc: { 'driverDetails.earnings': booking.finalFare }
+                    $inc: { 'driverDetails.earnings': totalFare }
                 });
 
                 // Wallet Logic
@@ -269,27 +292,8 @@ export const updateRideStatus = async (req, res) => {
                 await driverWallet.save();
                 booking.earningsProcessed = true; 
             }
-
-            // Deduct from passenger wallet (mandatory for all rides now)
-            const passenger = await User.findById(booking.passenger);
-            if (passenger) {
-                passenger.walletBalance -= booking.finalFare;
-                await passenger.save();
-
-                let passengerWallet = await Wallet.findOne({ user: booking.passenger });
-                if (!passengerWallet) {
-                    passengerWallet = await Wallet.create({ user: booking.passenger, balance: passenger.walletBalance });
-                }
-                passengerWallet.balance = passenger.walletBalance;
-                passengerWallet.transactions.push({
-                    type: 'debit',
-                    amount: booking.finalFare,
-                    description: `Ride Payment (ID: ${booking._id.toString().slice(-6).toUpperCase()})`,
-                    referenceId: booking._id
-                });
-                await passengerWallet.save();
-            }
         }
+
         if (status === 'cancelled') {
             booking.cancelledAt        = now;
             booking.cancelledBy        = role;
@@ -463,7 +467,7 @@ export const getBookingById = async (req, res) => {
 
         if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
 
-        const isPassenger = booking.passenger._id.toString() === req.user._id.toString();
+        const isPassenger = booking.passenger && booking.passenger._id.toString() === req.user._id.toString();
         const isDriver    = booking.driver && booking.driver._id.toString() === req.user._id.toString();
 
         if (!isPassenger && !isDriver) {

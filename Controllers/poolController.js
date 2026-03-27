@@ -1,5 +1,6 @@
 import Ride from '../Models/Ride.js';
 import User from '../Models/User.js';
+import Wallet from '../Models/Wallet.js';
 
 // ─── 1. POST /api/pools/publish ─────────────────────────
 // Driver publishes a new pool (City, Outstation, Rental)
