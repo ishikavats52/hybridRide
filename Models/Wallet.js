@@ -25,7 +25,7 @@ const walletSchema = new mongoose.Schema({
             type: String,
             required: true
         },
-        date: {
+        timestamp: {
             type: Date,
             default: Date.now
         },
