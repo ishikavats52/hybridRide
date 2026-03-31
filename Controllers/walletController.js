@@ -31,11 +31,7 @@ export const requestWithdrawal = async (req, res) => {
             return res.status(400).json({ success: false, message: amount < 100 ? "Minimum withdrawal is ₹100" : "Insufficient balance" });
         }
 
-        let fee = 0;
-        if (method === 'instant') {
-            fee = 0; // 0% fee per user request
-        }
-
+        let fee = amount * 0.02; // Standard 2% platform fee for withdrawals
         const netAmount = amount - fee;
 
         const withdrawal = await Withdrawal.create({
