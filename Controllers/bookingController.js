@@ -288,38 +288,49 @@ export const updateRideStatus = async (req, res) => {
             booking.startedAt = now;
         }
         if (status === 'completed') {
-            // CRITICAL FIX: Only run deduction and status updates IF NOT ALREADY COMPLETED
-            if (booking.status === 'completed') {
-                return res.json({ success: true, message: 'Ride already completed', data: booking });
+            // CRITICAL FIX: Only run deduction and status updates IF NOT ALREADY COMPLETED BY THIS USER
+            // If driver completes, allow passenger to still hit this to finalize payment.
+            if (booking.status === 'completed' && booking.paymentStatus === 'completed') {
+                return res.json({ success: true, message: 'Ride already fully finalized', data: booking });
             }
 
-            booking.completedAt = now;
-            
+            // Only update completion time once
+            if (booking.status !== 'completed') {
+                booking.completedAt = now;
+            }
+
             // Set paymentStatus to completed if the PASSENGER is the one updating
             // This ensures the ride remains "active" for the passenger until they finish the payment screen.
             if (isPassenger) {
                 booking.paymentStatus = 'completed';
             }
 
-            // Deduct from passenger wallet (mandatory for all rides now)
-            const passenger = await User.findById(booking.passenger);
-            if (passenger) {
-                const totalAmount = booking.finalFare || booking.offeredFare || 0;
-                passenger.walletBalance -= totalAmount;
-                await passenger.save();
+            // Deduct from passenger wallet (Only if not already paid/deducted)
+            if (booking.paymentStatus === 'completed' && !booking.earningsProcessed) {
+                const passenger = await User.findById(booking.passenger);
+                if (passenger) {
+                    const totalAmount = booking.finalFare || booking.offeredFare || 0;
+                    
+                    // Important: Check if balance is still enough (just in case they spent it since booking)
+                    // But we won't return 402 here to avoid blocking completion; 
+                    // we'll allow it to go negative if absolutely necessary or handle via UI block.
+                    
+                    passenger.walletBalance -= totalAmount;
+                    await passenger.save();
 
-                let passengerWallet = await Wallet.findOne({ user: booking.passenger });
-                if (!passengerWallet) {
-                    passengerWallet = await Wallet.create({ user: booking.passenger, balance: passenger.walletBalance });
+                    let passengerWallet = await Wallet.findOne({ user: booking.passenger });
+                    if (!passengerWallet) {
+                        passengerWallet = await Wallet.create({ user: booking.passenger, balance: passenger.walletBalance });
+                    }
+                    passengerWallet.balance = passenger.walletBalance;
+                    passengerWallet.transactions.push({
+                        type: 'debit',
+                        amount: totalAmount,
+                        description: `Ride Payment (ID: ${booking._id.toString().slice(-6).toUpperCase()})`,
+                        referenceId: booking._id
+                    });
+                    await passengerWallet.save();
                 }
-                passengerWallet.balance = passenger.walletBalance;
-                passengerWallet.transactions.push({
-                    type: 'debit',
-                    amount: totalAmount,
-                    description: `Ride Payment (ID: ${booking._id.toString().slice(-6).toUpperCase()})`,
-                    referenceId: booking._id
-                });
-                await passengerWallet.save();
             }
 
             // Add earning to driver's wallet (if not already added)
