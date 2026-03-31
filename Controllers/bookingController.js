@@ -305,16 +305,13 @@ export const updateRideStatus = async (req, res) => {
                 booking.paymentStatus = 'completed';
             }
 
-            // Deduct from passenger wallet (Only if not already paid/deducted)
+            // Wallet Accounting: ONLY proceed if payment is confirmed and hasn't been processed yet
             if (booking.paymentStatus === 'completed' && !booking.earningsProcessed) {
+                const totalAmount = booking.finalFare || booking.offeredFare || 0;
+
+                // 1. Deduct from passenger wallet
                 const passenger = await User.findById(booking.passenger);
                 if (passenger) {
-                    const totalAmount = booking.finalFare || booking.offeredFare || 0;
-                    
-                    // Important: Check if balance is still enough (just in case they spent it since booking)
-                    // But we won't return 402 here to avoid blocking completion; 
-                    // we'll allow it to go negative if absolutely necessary or handle via UI block.
-                    
                     passenger.walletBalance -= totalAmount;
                     await passenger.save();
 
@@ -331,40 +328,34 @@ export const updateRideStatus = async (req, res) => {
                     });
                     await passengerWallet.save();
                 }
-            }
 
-            // Add earning to driver's wallet (if not already added)
-            if (booking.driver && !booking.earningsProcessed) {
-                const totalFare = booking.finalFare || booking.offeredFare || 0;
-                const commission = 0; // 0% commission per user request
-                const driverNetEarning = totalFare; // Driver gets 100%
+                // 2. Add earning to driver's wallet (100% - 0% Fee)
+                if (booking.driver) {
+                    const driverNetEarning = totalAmount; // 0% Platform Commission
 
-                // Update Total Earnings (Aggregate)
-                await User.findByIdAndUpdate(booking.driver, {
-                    $inc: { 'driverDetails.earnings': totalFare }
-                });
-
-                // Wallet Logic
-                let driverWallet = await Wallet.findOne({ user: booking.driver });
-                if (!driverWallet) {
-                    driverWallet = await Wallet.create({ user: booking.driver, balance: 0 });
-                }
-
-                if (booking.paymentMethod === 'wallet' || true) { // Force wallet logic for Rapido flow
-                    // Credit Driver Wallet (Net Earning: 100%)
+                    // Update Total Earnings (Aggregate)
                     await User.findByIdAndUpdate(booking.driver, {
-                        $inc: { walletBalance: driverNetEarning }
+                        $inc: { 'driverDetails.earnings': totalAmount, walletBalance: driverNetEarning }
                     });
-                    driverWallet.balance += driverNetEarning;
+
+                    // Wallet History Logic
+                    let driverWallet = await Wallet.findOne({ user: booking.driver });
+                    if (!driverWallet) {
+                        driverWallet = await Wallet.create({ user: booking.driver, balance: driverNetEarning });
+                    } else {
+                        driverWallet.balance += driverNetEarning;
+                    }
+                    
                     driverWallet.transactions.push({
                         type: 'credit',
                         amount: driverNetEarning,
-                        description: `Ride Earning (ID: ${booking._id.toString().slice(-6).toUpperCase()}) - 0% Platform Fee`,
+                        description: `Ride Earning (ID: ${booking._id.toString().slice(-6).toUpperCase()}) - 0% Fee`,
                         referenceId: booking._id
                     });
-                } 
+                    await driverWallet.save();
+                }
 
-                await driverWallet.save();
+                // Mark as processed to prevent double-charging/double-payouts
                 booking.earningsProcessed = true; 
             }
         }
