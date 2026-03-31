@@ -205,7 +205,10 @@ export const bookSeat = async (req, res) => {
 
         // Deduct seats and push to manifest
         ride.availableSeats -= seats;
-        const pickupOtp = Math.floor(1000 + Math.random() * 9000).toString();
+
+        // No OTP for any pooling types (local, outstation, rental) per user request
+        const pickupOtp = null;
+
         ride.passengers.push({
             user: req.user._id,
             seatsBooked: seats,

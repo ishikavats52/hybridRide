@@ -178,7 +178,8 @@ export const verifyRidePayment = async (req, res) => {
         if (rideId) {
             const ride = await Ride.findById(rideId);
             if (ride && ride.availableSeats >= seats) {
-                const pickupOtp = Math.floor(1000 + Math.random() * 9000).toString();
+                // No OTP for pooling bookings per user request
+                const pickupOtp = null;
                 ride.availableSeats -= seats;
                 ride.passengers.push({
                     user: req.user._id,

@@ -115,12 +115,12 @@ const rideSchema = new mongoose.Schema(
         cancellationReason: { type: String },
         paymentMethod: {
           type: String,
-          enum: ["cash", "wallet"],
+          enum: ["cash", "wallet", "razorpay"],
           default: "cash",
         },
         paymentStatus: {
           type: String,
-          enum: ["pending", "completed"],
+          enum: ["pending", "completed", "paid"],
           default: "pending",
         },
       },
